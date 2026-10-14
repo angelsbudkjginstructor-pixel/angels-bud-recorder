@@ -1,0 +1,1136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#1b2430">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Angels Bud Recorder</title>
+<!-- These lines let the page be installed as an app with its own icon and window. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<!-- Lexend is a font designed to make reading easier. If the laptop is offline, the page falls back to the system font. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* LAYOUT: a dark app bar on top, then one screen with three cards.
+   Card colours: 1 blue (who), 2 purple (what), 3 red (go). The review screen is green. */
+:root{
+  --ink:#1b2430;
+  --muted:#4d5b6e;
+  --paper:#f4f6fa;
+  --card:#ffffff;
+  --line:#ccd5e2;
+  --s1:#1a5fd0;
+  --s2:#6d33c4;
+  --s3:#c62828;
+  --s4:#17753a;
+  --info-bg:#e7f0fe;  --info-line:#1a5fd0;
+  --warn-bg:#fff4d6;  --warn-line:#9a5b00;
+  --error-bg:#fde8e8; --error-line:#c62828;
+  --stage:#0f1722;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;min-height:100dvh;background:var(--paper);color:var(--ink);font:400 18px/1.55 "Lexend",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+main{max-width:780px;margin:0 auto;padding:16px 16px 48px}
+p{margin:0 0 12px}
+h2{margin:0 0 12px;font-size:26px;line-height:1.2;font-weight:800;text-wrap:balance}
+h2:focus{outline:none}
+
+/* App bar */
+.bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--ink);color:#fff}
+.bar svg{width:40px;height:40px;flex:none}
+.bar .school{display:block;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#c9d3e2}
+.bar strong{display:block;font-size:22px;font-weight:800;line-height:1.1}
+.install{margin-left:auto;min-height:44px;padding:6px 16px;font:inherit;font-size:16px;font-weight:600;color:var(--ink);background:#fff;border:0;border-radius:10px;cursor:pointer}
+.install:focus-visible{outline:3px solid #fff;outline-offset:3px}
+
+/* Messages */
+.notice{margin:0 0 16px;padding:14px 18px;border-radius:12px;border:3px solid var(--info-line);background:var(--info-bg);font-weight:600}
+.notice.warn{border-color:var(--warn-line);background:var(--warn-bg)}
+.notice.error{border-color:var(--error-line);background:var(--error-bg)}
+
+/* Cards */
+.card{--accent:var(--s1);margin:0 0 16px;background:var(--card);border:2px solid var(--line);border-top:10px solid var(--accent);border-radius:14px;padding:20px 20px 22px}
+#cardWhat{--accent:var(--s2)}
+#cardGo,#viewRecord .card{--accent:var(--s3)}
+#viewReview .card{--accent:var(--s4)}
+#recoverCard{--accent:var(--warn-line)}
+.num{display:inline-grid;place-items:center;width:36px;height:36px;margin-right:8px;border-radius:50%;background:var(--accent);color:#fff;font-size:20px;vertical-align:2px}
+
+/* Card 1: name and grade */
+label,legend{display:block;font-weight:600;font-size:20px;margin-bottom:8px}
+fieldset{border:0;margin:20px 0 0;padding:0;min-width:0}
+input[type=text]{width:100%;min-height:64px;font:inherit;font-size:24px;padding:10px 16px;border:3px solid var(--line);border-radius:12px;color:var(--ink);background:#fff}
+input[type=text]:focus-visible{outline:4px solid var(--accent);outline-offset:2px;border-color:var(--accent)}
+.grades{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:10px}
+.chip{position:relative;display:block;margin:0;font-size:inherit}
+.chip input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.chip span{display:grid;place-items:center;min-height:64px;border:3px solid var(--line);border-radius:12px;font-size:26px;font-weight:800;background:#fff;color:var(--ink)}
+.chip input:checked + span{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip input:focus-visible + span{outline:4px solid var(--ink);outline-offset:3px}
+
+/* Card 2: what to record */
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;border:0;margin:0;padding:0;min-width:0}
+.mode{position:relative;display:block;margin:0;font-size:inherit;cursor:pointer}
+.mode input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.mode .body{display:flex;flex-direction:column;gap:6px;height:100%;padding:16px;border:3px solid var(--line);border-radius:14px;background:#fff}
+.mode svg{width:52px;height:52px;color:var(--accent);fill:none;stroke:currentColor;stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}
+.mode strong{font-size:22px;font-weight:800}
+.mode .desc{font-size:16px;line-height:1.4;color:var(--muted)}
+.mode input:checked + .body{border-color:var(--accent);background:#f2ecfc;box-shadow:inset 0 0 0 2px var(--accent)}
+.mode input:focus-visible + .body{outline:4px solid var(--ink);outline-offset:3px}
+.mode input:disabled + .body{opacity:.5}
+.mode input:disabled,.mode:has(input:disabled){cursor:not-allowed}
+.check{display:flex;gap:12px;align-items:flex-start;margin:16px 0 0;font-size:18px;font-weight:600;cursor:pointer}
+.check input{flex:none;width:28px;height:28px;margin:2px 0 0;accent-color:var(--s2)}
+.check input:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
+
+/* Card 3: before you press Start */
+.howto{margin:0 0 18px;padding-left:1.4em}
+.howto li{margin:0 0 6px}
+.settings{margin:0 0 18px;padding:10px 16px;border:2px solid var(--line);border-radius:12px;background:#fafbfd}
+.settings summary{min-height:44px;display:flex;align-items:center;font-weight:600;cursor:pointer}
+.settings summary:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
+.setrow{margin:12px 0 0}
+.setrow label{font-size:17px;margin-bottom:4px}
+select{width:100%;min-height:56px;font:inherit;font-size:19px;padding:8px 12px;border:3px solid var(--line);border-radius:12px;color:var(--ink);background:#fff}
+select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
+.hint{margin:10px 0 0;font-size:15px;color:var(--muted)}
+
+/* Buttons */
+.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}
+.btn{min-height:64px;padding:10px 28px;font:inherit;font-size:22px;font-weight:800;color:#fff;background:var(--accent);border:3px solid var(--accent);border-radius:12px;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--accent)}
+.btn.dark{background:var(--ink);border-color:var(--ink)}
+.btn.danger{background:var(--s3);border-color:var(--s3)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible{outline:4px solid var(--ink);outline-offset:3px}
+.btn.go{width:100%;min-height:80px;font-size:30px;display:flex;align-items:center;justify-content:center;gap:16px}
+.btn.go::before{content:"";width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.45)}
+.btn.stop::before{content:"";display:inline-block;width:18px;height:18px;margin-right:12px;background:#fff;border-radius:3px;vertical-align:-2px}
+.btn.stop{min-width:200px;min-height:76px;font-size:26px}
+.btn.pause{min-width:200px;min-height:76px;font-size:26px}
+
+/* Recording screen */
+.who{margin:0;font-weight:600;color:var(--muted)}
+.stage{position:relative;aspect-ratio:16/9;max-width:100%;background:var(--stage);border-radius:12px;overflow:hidden;margin:14px 0;display:grid;place-items:center;color:#fff}
+.stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--stage)}
+.stage video.mirror{transform:scaleX(-1)} /* mirror only the live picture; the saved video is not mirrored */
+.stage-note{position:relative;padding:16px 24px;text-align:center;font-size:20px;font-weight:600;max-width:34ch}
+.stage-help{margin:0 0 12px;font-weight:600}
+.countdown{position:absolute;inset:0;display:grid;place-items:center;background:rgba(15,23,34,.55);font-size:clamp(96px,28vw,200px);font-weight:800;line-height:1;color:#fff}
+.rec{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:10px;padding:6px 14px;background:rgba(15,23,34,.8);border-radius:999px;font-weight:800;font-size:20px;font-variant-numeric:tabular-nums}
+.rec .dot{width:16px;height:16px;border-radius:50%;background:#ff4d4d;animation:pulse 1.2s ease-in-out infinite}
+.rec.paused .dot{animation:none;background:#ffb020}
+@keyframes pulse{50%{opacity:.3}}
+@media (prefers-reduced-motion:reduce){.rec .dot{animation:none}}
+.meter p{margin:0 0 6px;font-weight:600}
+.bar-track{height:20px;background:#e3e8f0;border-radius:10px;overflow:hidden}
+.bar-track i{display:block;height:100%;width:0;background:var(--s4);transition:width 80ms linear}
+.warnbox{margin-top:16px;padding:14px 18px;border-radius:12px;background:var(--warn-bg);border:3px solid var(--warn-line);font-weight:600}
+.warnbox p:last-child{margin-bottom:0}
+
+/* Review screen */
+#review{display:block;width:100%;max-height:60vh;background:var(--stage);border-radius:12px}
+.filebox{margin:12px 0 0;font-size:16px;color:var(--muted);overflow-wrap:anywhere}
+.saved{margin-top:16px;padding:14px 18px;border-radius:12px;background:#e6f4ea;border:3px solid var(--s4);font-weight:600}
+.foot{margin-top:8px;font-size:15px;color:var(--muted)}
+</style>
+</head>
+<body data-view="setup">
+
+<header class="bar">
+  <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="19" fill="#0f1722"/><circle cx="20" cy="20" r="11" fill="none" stroke="#fff" stroke-width="3"/><circle cx="20" cy="20" r="6" fill="#ff4d4d"/></svg>
+  <div><span class="school">Angels Bud International School</span><strong>Recorder</strong></div>
+  <button type="button" class="install" id="installBtn" hidden>Install app</button>
+</header>
+
+<main>
+  <noscript><div class="notice error">Please turn on JavaScript to use this recorder.</div></noscript>
+  <!-- One message area. Tips and problems appear here. -->
+  <div id="notice" class="notice" role="alert" hidden></div>
+
+  <!-- SCREEN 1: set up, then press Start -->
+  <section id="viewSetup">
+    <div id="unsupported" class="notice error" hidden>
+      This browser cannot record video. Please open this page in Google Chrome or Microsoft Edge on a laptop or desktop computer.
+    </div>
+
+    <!-- Shown only when the last recording was cut short (crash, power cut, closed tab). -->
+    <section class="card" id="recoverCard" hidden>
+      <h2>We found an unfinished recording</h2>
+      <p id="recoverInfo"></p>
+      <div class="actions">
+        <button type="button" class="btn" id="recoverBtn">Recover video</button>
+        <button type="button" class="btn ghost" id="recoverDelBtn">Delete it</button>
+      </div>
+    </section>
+
+    <section class="card" id="cardWho">
+      <h2><span class="num">1</span>Who are you?</h2>
+      <label for="name">Your name</label>
+      <input type="text" id="name" maxlength="40" autocomplete="off">
+      <fieldset>
+        <legend>Your grade (K = Kindergarten)</legend>
+        <div class="grades" id="grades"></div>
+      </fieldset>
+    </section>
+
+    <section class="card" id="cardWhat">
+      <h2><span class="num">2</span>What do you want to record?</h2>
+      <fieldset class="modes">
+        <legend class="sr" style="position:absolute;left:-9999px">Recording type</legend>
+        <label class="mode">
+          <input type="radio" name="mode" value="me" checked>
+          <span class="body">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="22" r="10"/><path d="M12 56c0-13 9-20 20-20s20 7 20 20"/></svg>
+            <strong>Just me</strong>
+            <span class="desc">My face and my voice.</span>
+          </span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="call">
+          <span class="body">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="6" y="10" width="24" height="20" rx="3"/><rect x="34" y="10" width="24" height="20" rx="3"/><rect x="6" y="34" width="24" height="20" rx="3"/><rect x="34" y="34" width="24" height="20" rx="3"/></svg>
+            <strong>Video call</strong>
+            <span class="desc">The whole call (Meet, Jitsi or Zoom) with everyone's voices.</span>
+          </span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="screen">
+          <span class="body">
+            <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="5" y="10" width="54" height="34" rx="4"/><path d="M22 54h20M32 44v10"/></svg>
+            <strong>My screen</strong>
+            <span class="desc">My slides or my screen, with my voice.</span>
+          </span>
+        </label>
+      </fieldset>
+      <!-- Only for "My screen": a small floating window with the student's face. -->
+      <label class="check" id="faceRow" hidden>
+        <input type="checkbox" id="faceChk" checked>
+        <span>Show my face in a small window. It only appears in the video when I share the Entire Screen.</span>
+      </label>
+    </section>
+
+    <section class="card" id="cardGo">
+      <h2><span class="num">3</span>Press Start</h2>
+      <ol class="howto" id="howTo"></ol>
+      <details class="settings" id="settings">
+        <summary>Settings: camera, microphone, quality</summary>
+        <div class="setrow"><label for="camSel">Camera</label><select id="camSel"></select></div>
+        <div class="setrow"><label for="micSel">Microphone</label><select id="micSel"></select></div>
+        <div class="setrow">
+          <label for="qualSel">Video quality</label>
+          <select id="qualSel">
+            <option value="low">Small file (smaller video)</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High (bigger file)</option>
+          </select>
+        </div>
+        <p class="hint" id="devHint"></p>
+      </details>
+      <button type="button" class="btn go" id="startBtn">Start</button>
+    </section>
+    <p class="foot">Works in Google Chrome or Microsoft Edge on a laptop. Your video stays on this laptop. Nothing is uploaded. <span id="versionTag"></span></p>
+  </section>
+
+  <!-- SCREEN 2: get ready, countdown, recording -->
+  <section id="viewRecord" hidden>
+    <div class="card">
+      <h2 id="recTitle" tabindex="-1">Get ready</h2>
+      <p class="who" id="whoLine"></p>
+      <div class="stage" id="stage">
+        <video id="live" autoplay muted playsinline hidden></video>
+        <p class="stage-note" id="stageNote"></p>
+        <div class="countdown" id="countdown" aria-live="assertive" hidden></div>
+        <div class="rec" id="recBadge" hidden><span class="dot"></span><span id="recLabel">REC</span> <span id="timer">00:00</span></div>
+      </div>
+      <p class="stage-help" id="stageHelp" hidden></p>
+      <div class="meter" id="meterWrap" hidden>
+        <p>Sound check: the green bar moves when you talk.</p>
+        <div class="bar-track"><i id="meterFill"></i></div>
+      </div>
+      <div class="warnbox" id="warnBox" hidden><p id="warnText"></p></div>
+      <div class="actions">
+        <button type="button" class="btn ghost" id="cancelBtn" hidden>Cancel</button>
+        <button type="button" class="btn ghost pause" id="pauseBtn" hidden>Pause</button>
+        <button type="button" class="btn pause" id="resumeBtn" hidden>Resume</button>
+        <button type="button" class="btn stop" id="stopBtn" hidden>Stop</button>
+        <button type="button" class="btn" id="goBtn" hidden>Start recording</button>
+        <button type="button" class="btn ghost" id="chooseAgainBtn" hidden>Choose again</button>
+        <button type="button" class="btn ghost" id="backHomeBtn" hidden>Back</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREEN 3: watch the video and save it -->
+  <section id="viewReview" hidden>
+    <div class="card">
+      <h2 id="revTitle" tabindex="-1">Watch and save</h2>
+      <video id="review" controls playsinline></video>
+      <p class="filebox">File name: <strong id="fileName"></strong> <span id="fileSize"></span></p>
+      <div class="saved" id="savedMsg" hidden>Saved! Look for the file in your Downloads folder. Then give it to your teacher.</div>
+      <div class="warnbox" id="unsavedWarn" hidden>
+        <p>This video is not saved yet. If you carry on, it will be deleted.</p>
+        <div class="actions">
+          <button type="button" class="btn ghost" id="warnBack">Go back</button>
+          <button type="button" class="btn danger" id="warnGo">Delete it and carry on</button>
+        </div>
+      </div>
+      <div class="actions" id="reviewActions">
+        <button type="button" class="btn" id="saveBtn">Save video</button>
+        <button type="button" class="btn ghost" id="againBtn">Record again</button>
+        <button type="button" class="btn ghost" id="newBtn">Next student</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ================= SETTINGS (safe to change) ================= */
+  const VERSION = '3.0';
+  const MAX_MINUTES = 15;        // recording stops by itself after this long, so the laptop does not run out of memory
+  const AUDIO_BITS  = 128000;    // sound quality
+  const COUNTDOWN_FROM = 3;      // 3, 2, 1 before recording starts
+  const GRADES = ['K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+  // Video quality choices: size asked from the camera, and bits per second for the saved file.
+  const QUALITY = {
+    low:    { w: 640,  h: 360,  bits: 1000000 },
+    normal: { w: 1280, h: 720,  bits: 2500000 },
+    high:   { w: 1920, h: 1080, bits: 5000000 }
+  };
+
+  /* ================= SMALL HELPERS ================= */
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, '0');
+
+  const VIEWS = { setup: 'viewSetup', record: 'viewRecord', review: 'viewReview' };
+  const BTNS = ['cancelBtn', 'pauseBtn', 'resumeBtn', 'stopBtn', 'goBtn', 'chooseAgainBtn', 'backHomeBtn'];
+  const MIC = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  const MODE_LABEL = { me: 'Just me', call: 'Video call', screen: 'My screen' };
+
+  /* ================= STATE ================= */
+  let student = { name: '', grade: '' };
+  let mode = 'me';
+  let wantFace = false;        // the student asked for a face window (My screen only)
+  let state = 'idle';          // idle | acquiring | ready | countdown | recording | paused | finishing
+  let phase = '';              // what we were asking for when an error happened
+  let streams = [];            // every stream we open, so we can switch them all off
+  let recordStream = null;     // the final picture + mixed sound that gets recorded
+  let faceStream = null;       // camera for the face window
+  let audioCtx = null, analyser = null, meterRaf = 0;
+  let recorder = null, chunks = [], chunkSeq = 0, mimeUsed = '';
+  let startedAt = 0, pausedAt = 0, pausedTotal = 0, startDate = new Date(), timerId = 0, countdownId = 0;
+  let blobUrl = '', fileName = '', saved = false, pendingLeave = null, stopReason = '';
+  let tabAudioShared = false, faceActive = false, faceError = '', surface = '';
+  let sessionMeta = null;      // details about the recording kept in the laptop's storage, for crash recovery
+  let recoverMeta = null, recoverParts = [];
+  let installEvent = null;
+
+  /* ================= SAVED CHOICES (camera, microphone, quality) ================= */
+  function loadPref(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function savePref(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage may be off: fine */ } }
+
+  /* ================= CRASH PROTECTION: THE LAPTOP'S SMALL DATABASE ================= */
+  // While recording, every second of video is also kept in the browser's own storage.
+  // If the browser closes by accident, the video can be recovered the next time the page opens.
+  const DB_NAME = 'angels-bud-recorder';
+  let dbPromise = null;
+  function openDb() {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise((resolve, reject) => {
+      if (!window.indexedDB) { reject(new Error('no storage')); return; }
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore('meta'); req.result.createObjectStore('chunks'); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return dbPromise;
+  }
+  function dbRun(store, access, fn) {
+    return openDb().then((db) => new Promise((resolve, reject) => {
+      const t = db.transaction(store, access);
+      const req = fn(t.objectStore(store));
+      let out;
+      if (req) req.onsuccess = () => { out = req.result; };
+      t.oncomplete = () => resolve(out);
+      t.onerror = t.onabort = () => reject(t.error);
+    }));
+  }
+  const dbPut = (store, key, val) => dbRun(store, 'readwrite', (s) => s.put(val, key));
+  const dbGet = (store, key) => dbRun(store, 'readonly', (s) => s.get(key));
+  const dbAll = (store) => dbRun(store, 'readonly', (s) => s.getAll());
+  function dbClearAll() {
+    return openDb().then((db) => new Promise((resolve, reject) => {
+      const t = db.transaction(['meta', 'chunks'], 'readwrite');
+      t.objectStore('meta').clear();
+      t.objectStore('chunks').clear();
+      t.oncomplete = () => resolve();
+      t.onerror = t.onabort = () => reject(t.error);
+    }));
+  }
+  // Writes go one after another, in order. A storage problem never stops the recording.
+  let writeQueue = Promise.resolve();
+  function persist(fn) { writeQueue = writeQueue.then(fn).catch((err) => { console.warn('Crash-protection copy failed:', err && err.name, err && err.message); }); return writeQueue; }
+
+  /* ================= MESSAGES AND SCREENS ================= */
+  function notify(text, type) {
+    const n = $('notice');
+    n.textContent = text;
+    n.className = 'notice ' + (type || 'info');
+    n.hidden = false;
+  }
+  function clearNotice() { $('notice').hidden = true; }
+
+  // Show one of the three screens.
+  function setView(v, focus = true) {
+    Object.keys(VIEWS).forEach((k) => { $(VIEWS[k]).hidden = (k !== v); });
+    document.body.dataset.view = v;
+    if (focus) {
+      const h = $(VIEWS[v]).querySelector('h2');
+      if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+      window.scrollTo(0, 0);
+    }
+  }
+  function showBtns(ids) { BTNS.forEach((id) => { $(id).hidden = !ids.includes(id); }); }
+
+  /* ================= BROWSER SUPPORT CHECK ================= */
+  const md = navigator.mediaDevices;
+  const canRecord = !!(window.MediaRecorder && md && md.getUserMedia);
+  const canShare = !!(md && md.getDisplayMedia);
+  const canFace = !!(document.pictureInPictureEnabled && HTMLVideoElement.prototype.requestPictureInPicture);
+  if (!canRecord) {
+    $('unsupported').hidden = false;
+    $('startBtn').disabled = true;
+  }
+  if (!canShare) {
+    document.querySelectorAll('input[name="mode"][value="call"], input[name="mode"][value="screen"]').forEach((r) => {
+      r.disabled = true;
+      r.closest('.mode').querySelector('.desc').textContent = 'Not available in this browser. Use Chrome or Edge on a laptop.';
+    });
+  }
+  if (!canFace) {
+    $('faceChk').checked = false;
+    $('faceChk').disabled = true;
+    $('faceRow').querySelector('span').textContent = 'The face window is not available in this browser. Use Chrome or Edge on a laptop.';
+  }
+  $('versionTag').textContent = 'Version ' + VERSION;
+
+  /* ================= SCREEN 1: SET UP ================= */
+  // Grade buttons K to 12
+  GRADES.forEach((g) => {
+    const label = document.createElement('label');
+    label.className = 'chip';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'grade';
+    input.value = g;
+    input.setAttribute('aria-label', g === 'K' ? 'Kindergarten' : 'Grade ' + g);
+    const span = document.createElement('span');
+    span.textContent = g;
+    label.append(input, span);
+    $('grades').appendChild(label);
+  });
+
+  const currentMode = () => document.querySelector('input[name="mode"]:checked').value;
+
+  // Short instructions for the chosen type
+  function renderHowTo() {
+    const m = currentMode();
+    const face = m === 'screen' && $('faceChk').checked && !$('faceChk').disabled;
+    let lines;
+    if (m === 'me') {
+      lines = [
+        'Sit so your face is in the picture.',
+        'Press Start. If a box asks about the camera, choose Allow.',
+        'Wait for 3, 2, 1. Then speak.'
+      ];
+    } else if (m === 'call') {
+      lines = [
+        'Join your video call first. Use headphones.',
+        'Press Start. Pick the Tab option, choose your call tab, and tick "Also share tab audio". Then press Share.',
+        'After 3, 2, 1, go to your call tab. To finish, come back here and press Stop (or press "Stop sharing").'
+      ];
+    } else if (face) {
+      lines = [
+        'Open your slides first.',
+        'Press Start. Pick "Entire Screen", then press Share. If a box asks about the camera, choose Allow.',
+        'Press "Start recording". Drag your small face window to a corner.',
+        'After 3, 2, 1, go to your slides. To finish, come back here and press Stop (or press "Stop sharing").'
+      ];
+    } else {
+      lines = [
+        'Open your slides first.',
+        'Press Start. Pick "Entire Screen" or your slides tab. Then press Share.',
+        'After 3, 2, 1, go to your slides. To finish, come back here and press Stop (or press "Stop sharing").'
+      ];
+    }
+    const ol = $('howTo');
+    ol.textContent = '';
+    lines.forEach((t) => { const li = document.createElement('li'); li.textContent = t; ol.appendChild(li); });
+    $('faceRow').hidden = (m !== 'screen');
+  }
+  document.querySelectorAll('input[name="mode"]').forEach((r) => r.addEventListener('change', renderHowTo));
+  $('faceChk').addEventListener('change', renderHowTo);
+  renderHowTo();
+
+  /* ---------- Camera, microphone and quality choices ---------- */
+  function fillSelect(sel, devices, noun) {
+    const keep = sel.value || loadPref(sel.id);
+    sel.textContent = '';
+    sel.add(new Option('Default ' + noun, ''));
+    devices.forEach((d, i) => {
+      if (!d.deviceId || d.deviceId === 'default' || d.deviceId === 'communications') return;
+      sel.add(new Option(d.label || (noun.charAt(0).toUpperCase() + noun.slice(1) + ' ' + (i + 1)), d.deviceId));
+    });
+    if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  }
+  async function refreshDevices() {
+    if (!md || !md.enumerateDevices) return;
+    let list = [];
+    try { list = await md.enumerateDevices(); } catch (e) { return; }
+    fillSelect($('camSel'), list.filter((d) => d.kind === 'videoinput'), 'camera');
+    fillSelect($('micSel'), list.filter((d) => d.kind === 'audioinput'), 'microphone');
+    const unnamed = list.some((d) => (d.kind === 'videoinput' || d.kind === 'audioinput') && !d.label);
+    $('devHint').textContent = unnamed ? 'The names of your camera and microphone show here after you press Start the first time.' : '';
+  }
+  ['camSel', 'micSel', 'qualSel'].forEach((id) => $(id).addEventListener('change', () => savePref(id, $(id).value)));
+  if (loadPref('qualSel') && QUALITY[loadPref('qualSel')]) $('qualSel').value = loadPref('qualSel');
+  if (md && md.addEventListener) md.addEventListener('devicechange', refreshDevices);
+  refreshDevices();
+
+  const quality = () => QUALITY[$('qualSel').value] || QUALITY.normal;
+  function camConstraints() {
+    const q = quality();
+    const v = { width: { ideal: q.w }, height: { ideal: q.h }, facingMode: 'user' };
+    if ($('camSel').value) v.deviceId = { exact: $('camSel').value };
+    return v;
+  }
+  function micConstraints() {
+    const a = Object.assign({}, MIC);
+    if ($('micSel').value) a.deviceId = { exact: $('micSel').value };
+    return a;
+  }
+  // getUserMedia, but if the chosen camera or microphone was unplugged, use the default one instead.
+  async function gum(constraints) {
+    try {
+      return await md.getUserMedia(constraints);
+    } catch (err) {
+      if (err && (err.name === 'OverconstrainedError' || err.name === 'NotFoundError')) {
+        const c2 = JSON.parse(JSON.stringify(constraints));
+        let changed = false;
+        ['video', 'audio'].forEach((k) => {
+          if (c2[k] && typeof c2[k] === 'object' && c2[k].deviceId) { delete c2[k].deviceId; changed = true; }
+        });
+        if (changed) {
+          $('camSel').value = '';
+          $('micSel').value = '';
+          return await md.getUserMedia(c2);
+        }
+      }
+      throw err;
+    }
+  }
+
+  /* ---------- Press Start ---------- */
+  $('startBtn').addEventListener('click', onStart);
+  $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') onStart(); });
+
+  // Press Start: check the name and grade, open the camera or screen, then count down.
+  async function onStart() {
+    if (!canRecord || ['acquiring', 'countdown', 'recording', 'paused', 'finishing'].includes(state)) return;
+    // Never start over an unfinished recording without asking: it would be lost.
+    if (!$('recoverCard').hidden) {
+      notify('You have an unfinished recording. Please recover it or delete it first.', 'warn');
+      $('recoverCard').scrollIntoView();
+      return;
+    }
+    const name = $('name').value.trim();
+    const g = document.querySelector('input[name="grade"]:checked');
+    mode = currentMode();
+    if (!name) { notify('Please type your name.', 'warn'); $('name').focus(); return; }
+    if (!g) { notify('Please tap your grade.', 'warn'); document.querySelector('input[name="grade"]').focus(); return; }
+    student = { name, grade: g.value };
+    wantFace = mode === 'screen' && canFace && $('faceChk').checked;
+    clearNotice();
+
+    // Switch to the recording screen straight away.
+    state = 'acquiring';
+    $('recTitle').textContent = 'Get ready';
+    $('whoLine').textContent = name + ' · Grade ' + g.value + ' · ' + MODE_LABEL[mode];
+    $('live').hidden = true;
+    $('live').classList.remove('mirror');
+    $('stageNote').hidden = false;
+    $('stageNote').textContent = mode === 'me' ? 'Choose Allow if a box asks about the camera and microphone.' : 'Choose what to share in the box that opened.';
+    $('stageHelp').hidden = true;
+    $('recBadge').hidden = true;
+    $('recBadge').classList.remove('paused');
+    $('recLabel').textContent = 'REC';
+    $('countdown').hidden = true;
+    $('meterWrap').hidden = true;
+    $('warnBox').hidden = true;
+    $('timer').textContent = '00:00';
+    showBtns([]);
+    setView('record');
+
+    try {
+      await acquire();                     // this is the part where the browser asks permission
+    } catch (err) {
+      toSetup();
+      notify(describeError(err), 'error');
+      return;
+    }
+    decideNextStep();
+  }
+
+  // After the camera or screen is open: count down now, or stop and tell the student something first.
+  function decideNextStep() {
+    const warns = [];
+    let help = '';
+    let goLabel = 'Start recording';
+    let goPrimary = true;
+    let needReady = false;
+
+    if (mode === 'call' && !tabAudioShared) {
+      needReady = true;
+      goLabel = 'Record anyway';
+      goPrimary = false;
+      warns.push('The call sound is NOT shared, so other voices will be missing from the video. Press "Choose again" and tick "Also share tab audio".');
+    }
+    if (wantFace) {
+      needReady = true;
+      if (faceError) {
+        warns.push('The camera could not be turned on, so your face will not be in the video. ' + faceError);
+      } else if (surface && surface !== 'monitor') {
+        goLabel = 'Record without my face';
+        goPrimary = false;
+        warns.push('Your face window will not show in the video, because you did not pick "Entire Screen". Press "Choose again" and pick Entire Screen.');
+      } else {
+        help = 'Press "Start recording". Your face moves into a small window. Drag it to a corner.';
+      }
+    }
+    if (!needReady) { beginCountdown(); return; }
+
+    state = 'ready';
+    $('recTitle').textContent = 'Almost ready';
+    $('warnText').textContent = warns.join(' ');
+    $('warnBox').hidden = warns.length === 0;
+    $('stageHelp').textContent = help;
+    $('stageHelp').hidden = !help;
+    $('goBtn').textContent = goLabel;
+    $('goBtn').className = goPrimary ? 'btn' : 'btn ghost';
+    $('chooseAgainBtn').className = goPrimary ? 'btn ghost' : 'btn';
+    showBtns(['goBtn', 'chooseAgainBtn', 'backHomeBtn']);
+  }
+
+  // Go back to the first screen and switch everything off.
+  function toSetup() {
+    releaseAll();
+    state = 'idle';
+    setView('setup');
+  }
+
+  /* ================= OPENING THE CAMERA / SCREEN ================= */
+  // Pick the best video format this browser can make. MP4 first, because it plays almost everywhere.
+  function pickMime() {
+    const options = [
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm'
+    ];
+    for (const t of options) {
+      try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (e) { /* try the next one */ }
+    }
+    return '';
+  }
+
+  // Ask the browser to share a screen or tab. This must run straight after a click.
+  async function getDisplay() {
+    try {
+      return await md.getDisplayMedia({
+        video: { displaySurface: mode === 'call' ? 'browser' : 'monitor', frameRate: { ideal: 30 } },
+        audio: true,
+        selfBrowserSurface: 'exclude',   // hides this recorder tab from the list
+        surfaceSwitching: 'include'
+      });
+    } catch (err) {
+      if (err && (err.name === 'TypeError' || err.name === 'OverconstrainedError')) {
+        return await md.getDisplayMedia({ video: true, audio: true });   // plain version for older browsers
+      }
+      throw err;
+    }
+  }
+
+  // Open camera / screen and microphone, then mix all the sound into one track.
+  async function acquire() {
+    releaseAll();
+    let videoTracks, audioSources, micStream;
+    tabAudioShared = false; faceActive = false; faceError = ''; surface = '';
+
+    if (mode === 'me') {
+      phase = 'camera';
+      const cam = await gum({ video: camConstraints(), audio: micConstraints() });
+      streams.push(cam);
+      micStream = cam;
+      videoTracks = cam.getVideoTracks();
+      audioSources = [cam];
+    } else {
+      // The screen picker must come first. It needs the click that just happened.
+      phase = 'display';
+      const display = await getDisplay();
+      streams.push(display);
+      phase = 'mic';
+      micStream = await gum({ audio: micConstraints(), video: false });
+      streams.push(micStream);
+      videoTracks = display.getVideoTracks();
+      tabAudioShared = display.getAudioTracks().length > 0;
+      try { surface = videoTracks[0].getSettings().displaySurface || ''; } catch (e) { surface = ''; }
+      audioSources = [display, micStream];
+      if (wantFace) {
+        // The face window is a bonus. If the camera fails, the screen is still recorded.
+        phase = 'camera';
+        try {
+          faceStream = await gum({ video: camConstraints(), audio: false });
+          streams.push(faceStream);
+          faceActive = true;
+        } catch (err) { faceError = describeError(err); }
+      }
+    }
+
+    // Mix every sound source (own voice + call sound) into a single audio track.
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new Ctx();
+    try { await audioCtx.resume(); } catch (e) { /* not needed in most browsers */ }
+    const dest = audioCtx.createMediaStreamDestination();
+    audioSources.forEach((s) => {
+      if (s.getAudioTracks().length) audioCtx.createMediaStreamSource(s).connect(dest);
+    });
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    if (micStream.getAudioTracks().length) audioCtx.createMediaStreamSource(micStream).connect(analyser);
+
+    recordStream = new MediaStream([...videoTracks, ...dest.stream.getAudioTracks()]);
+    // If the student stops sharing (or unplugs the camera), we find out here.
+    videoTracks.forEach((t) => t.addEventListener('ended', onSourceEnded));
+
+    const live = $('live');
+    if (mode === 'me') {
+      live.srcObject = new MediaStream(videoTracks);
+      live.classList.add('mirror');
+      live.hidden = false;
+      $('stageNote').hidden = true;
+    } else if (faceActive) {
+      // Show the student's own face here. It moves to a floating window when recording starts.
+      live.srcObject = faceStream;
+      live.classList.add('mirror');
+      live.hidden = false;
+      $('stageNote').hidden = true;
+    } else {
+      // The shared picture is not shown here. It would repeat itself like two mirrors.
+      live.hidden = true;
+      $('stageNote').hidden = false;
+      $('stageNote').textContent = 'Sharing is on. The picture is hidden here so it does not repeat itself.';
+    }
+    $('meterWrap').hidden = false;
+    startMeter();
+    refreshDevices();                      // camera and microphone names are known now
+  }
+
+  // The green bar that shows the microphone is working.
+  function startMeter() {
+    cancelAnimationFrame(meterRaf);
+    if (!analyser) return;
+    const data = new Uint8Array(analyser.fftSize);
+    const fill = $('meterFill');
+    const tick = () => {
+      if (!analyser) return;
+      analyser.getByteTimeDomainData(data);
+      let peak = 0;
+      for (let i = 0; i < data.length; i++) { const v = Math.abs(data[i] - 128) / 128; if (v > peak) peak = v; }
+      fill.style.width = Math.min(100, Math.round(peak * 220)) + '%';
+      meterRaf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  // Friendly words for each kind of problem.
+  function describeError(err) {
+    const n = err && err.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') {
+      if (phase === 'display') return 'Nothing was shared. Press Start again, pick what to share, then press Share.';
+      return 'The camera or microphone is blocked. Click the lock or camera icon next to the web address, choose Allow, then press Start again.';
+    }
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No camera or microphone was found. Check that it is plugged in, then try again.';
+    if (n === 'NotReadableError' || n === 'AbortError') return 'Another app is using the camera or microphone. Close that app and try again.';
+    return 'Something went wrong (' + (n || 'unknown') + '). Please tell your teacher.';
+  }
+
+  // Sharing stopped (student clicked "Stop sharing", or the camera was unplugged).
+  function onSourceEnded() {
+    if (state === 'recording' || state === 'paused') {
+      stopRecording('Sharing stopped, so the recording stopped too. Here is what was recorded.');
+    } else if (['acquiring', 'ready', 'countdown'].includes(state)) {
+      toSetup();
+      notify('Sharing stopped. Press Start to try again.', 'warn');
+    }
+  }
+
+  // Buttons on the get-ready screen
+  $('chooseAgainBtn').addEventListener('click', () => { state = 'idle'; onStart(); });
+  $('backHomeBtn').addEventListener('click', toSetup);
+  $('cancelBtn').addEventListener('click', () => { toSetup(); notify('Cancelled. Press Start when you are ready.', 'info'); });
+  $('goBtn').addEventListener('click', async () => {
+    if (state !== 'ready') return;
+    if (wantFace && faceActive) await openFaceWindow();    // needs this click, so it happens here
+    beginCountdown();
+  });
+
+  // Move the student's face into a small floating window that stays on top of everything.
+  // When the whole screen is recorded, that window is part of the video.
+  async function openFaceWindow() {
+    const live = $('live');
+    try {
+      if (live.readyState < 1) {
+        await new Promise((resolve) => { live.addEventListener('loadedmetadata', resolve, { once: true }); setTimeout(resolve, 3000); });
+      }
+      await live.requestPictureInPicture();
+    } catch (e) {
+      faceActive = false;
+      notify('The face window could not open, so your face will not be in the video.', 'warn');
+    }
+  }
+
+  /* ================= COUNTDOWN AND RECORDING ================= */
+  function beginCountdown() {
+    state = 'countdown';
+    $('recTitle').textContent = 'Get ready';
+    $('warnBox').hidden = true;
+    $('stageHelp').hidden = true;
+    showBtns(['cancelBtn']);
+    let n = COUNTDOWN_FROM;
+    const box = $('countdown');
+    box.textContent = String(n);
+    box.hidden = false;
+    countdownId = setInterval(() => {
+      n -= 1;
+      if (n > 0) { box.textContent = String(n); return; }
+      clearInterval(countdownId);
+      countdownId = 0;
+      box.hidden = true;
+      startRecording();
+    }, 1000);
+  }
+
+  function cancelCountdown() {
+    if (countdownId) { clearInterval(countdownId); countdownId = 0; }
+    $('countdown').hidden = true;
+  }
+
+  function recordingNote() {
+    if (mode === 'me') return '';
+    const where = mode === 'call' ? 'call' : 'slides';
+    return 'Recording now. Go to your ' + where + '.' + (faceActive ? ' Your face is in the small window.' : '') + ' Come back here to press Stop.';
+  }
+
+  function startRecording() {
+    if (!recordStream) { toSetup(); return; }
+    chunks = [];
+    chunkSeq = 0;
+    const mime = pickMime();
+    const opts = { videoBitsPerSecond: quality().bits, audioBitsPerSecond: AUDIO_BITS };
+    if (mime) opts.mimeType = mime;
+    try {
+      recorder = new MediaRecorder(recordStream, opts);
+    } catch (e) {
+      try { recorder = new MediaRecorder(recordStream); }
+      catch (e2) {
+        toSetup();
+        notify('This browser could not start recording. Please use Google Chrome or Microsoft Edge.', 'error');
+        return;
+      }
+    }
+    mimeUsed = recorder.mimeType || mime || 'video/webm';
+
+    startDate = new Date();            // used for the file name
+    startedAt = Date.now();
+    pausedAt = 0;
+    pausedTotal = 0;
+
+    // Start a fresh crash-protection copy of this recording.
+    sessionMeta = { name: student.name, grade: student.grade, mode, mime: mimeUsed, startedAt, updatedAt: startedAt, saved: false };
+    const first = Object.assign({}, sessionMeta);
+    persist(async () => { await dbClearAll(); await dbPut('meta', 'current', first); });
+
+    recorder.ondataavailable = (e) => {
+      if (!e.data || e.data.size === 0) return;
+      chunks.push(e.data);
+      const n = ++chunkSeq;
+      sessionMeta.updatedAt = Date.now();
+      const snap = Object.assign({}, sessionMeta);
+      persist(async () => { await dbPut('chunks', n, e.data); await dbPut('meta', 'current', snap); });
+    };
+    recorder.onerror = () => stopRecording('Something went wrong while recording. Here is what was recorded.');
+    recorder.onstop = finishRecording;
+    recorder.start(1000);              // save a piece every second, so a crash loses very little
+
+    state = 'recording';
+    $('recTitle').textContent = 'Recording';
+    $('timer').textContent = '00:00';
+    $('recLabel').textContent = 'REC';
+    $('recBadge').classList.remove('paused');
+    $('recBadge').hidden = false;
+    if (mode !== 'me') { $('stageNote').hidden = false; $('stageNote').textContent = recordingNote(); }
+    showBtns(['pauseBtn', 'stopBtn']);
+    timerId = setInterval(updateTimer, 250);
+  }
+
+  // Time recorded so far. Time spent paused does not count.
+  function elapsedSec() {
+    const now = Date.now();
+    const pausedNow = state === 'paused' ? now - pausedAt : 0;
+    return Math.max(0, Math.floor((now - startedAt - pausedTotal - pausedNow) / 1000));
+  }
+  function updateTimer() {
+    const s = elapsedSec();
+    $('timer').textContent = pad(Math.floor(s / 60)) + ':' + pad(s % 60);
+    if (state === 'recording' && s >= MAX_MINUTES * 60) stopRecording('Time is up. The recording stopped after ' + MAX_MINUTES + ' minutes.');
+  }
+
+  $('pauseBtn').addEventListener('click', () => {
+    if (state !== 'recording' || !recorder) return;
+    try { recorder.pause(); } catch (e) { return; }
+    state = 'paused';
+    pausedAt = Date.now();
+    $('recLabel').textContent = 'PAUSED';
+    $('recBadge').classList.add('paused');
+    $('recTitle').textContent = 'Paused';
+    if (mode !== 'me') { $('stageNote').hidden = false; $('stageNote').textContent = 'Paused. Come back here and press Resume.'; }
+    showBtns(['resumeBtn', 'stopBtn']);
+  });
+  $('resumeBtn').addEventListener('click', () => {
+    if (state !== 'paused' || !recorder) return;
+    try { recorder.resume(); } catch (e) { return; }
+    pausedTotal += Date.now() - pausedAt;
+    state = 'recording';
+    $('recLabel').textContent = 'REC';
+    $('recBadge').classList.remove('paused');
+    $('recTitle').textContent = 'Recording';
+    if (mode !== 'me') $('stageNote').textContent = recordingNote();
+    showBtns(['pauseBtn', 'stopBtn']);
+  });
+
+  function stopRecording(reason) {
+    if (!recorder || recorder.state === 'inactive' || !['recording', 'paused'].includes(state)) return;
+    state = 'finishing';
+    stopReason = reason || '';
+    clearInterval(timerId); timerId = 0;
+    try { recorder.stop(); } catch (e) { finishRecording(); }
+  }
+  $('stopBtn').addEventListener('click', () => stopRecording(''));
+
+  // Build the video file from the saved pieces and show it for review.
+  function finishRecording() {
+    const type = (mimeUsed || 'video/webm').split(';')[0];
+    const blob = new Blob(chunks, { type });
+    chunks = [];
+    releaseAll();                      // switches the camera light, face window and screen sharing off
+    state = 'idle';
+    if (blob.size < 1000) {
+      persist(() => dbClearAll());
+      sessionMeta = null;
+      setView('setup');
+      notify('The recording is empty. Please try again.', 'error');
+      return;
+    }
+    showReview(blob, type, student, startDate);
+    if (stopReason) notify(stopReason, 'info'); else clearNotice();
+  }
+
+  function showReview(blob, type, who, date) {
+    discardVideo();
+    blobUrl = URL.createObjectURL(blob);
+    fileName = makeFileName(type.includes('mp4') ? 'mp4' : 'webm', who, date);
+    saved = false;
+    $('review').src = blobUrl;
+    $('fileName').textContent = fileName;
+    $('fileSize').textContent = '(' + formatSize(blob.size) + ')';
+    $('savedMsg').hidden = true;
+    $('unsavedWarn').hidden = true;
+    $('reviewActions').hidden = false;
+    $('saveBtn').textContent = 'Save video';
+    setView('review');
+  }
+
+  // WebM files from the browser have no length written in them. This small trick lets the play bar work.
+  $('review').addEventListener('loadedmetadata', () => {
+    const v = $('review');
+    if (v.duration === Infinity) {
+      v.currentTime = 1e101;
+      v.addEventListener('timeupdate', () => { v.currentTime = 0; }, { once: true });
+    }
+  });
+
+  /* ================= SCREEN 3: WATCH, SAVE, RECORD AGAIN ================= */
+  function cleanPart(s) {
+    // Keep letters and numbers from any language. Spaces become underscores.
+    return s.normalize('NFC').replace(/[^\p{L}\p{N}_\- ]+/gu, '').trim().replace(/\s+/g, '_').slice(0, 40);
+  }
+  function makeFileName(ext, who, d) {
+    const date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    const time = pad(d.getHours()) + pad(d.getMinutes());     // time stops two videos having the same name
+    return (cleanPart(who.name) || 'Student') + '_Grade' + who.grade + '_' + date + '_' + time + '.' + ext;
+  }
+  function formatSize(bytes) {
+    return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+  }
+
+  $('saveBtn').addEventListener('click', () => {
+    if (!blobUrl) return;
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    saved = true;
+    if (sessionMeta) {
+      sessionMeta.saved = true;           // the crash-protection copy is no longer needed
+      const snap = Object.assign({}, sessionMeta);
+      persist(() => dbPut('meta', 'current', snap));
+    }
+    $('savedMsg').hidden = false;
+    $('saveBtn').textContent = 'Save again';
+  });
+
+  function discardVideo() {
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
+    blobUrl = '';
+    saved = false;
+    const v = $('review');
+    v.removeAttribute('src');
+    v.load();
+  }
+
+  // Never throw away a video that was not saved without asking first.
+  function leave(target) {
+    if (!saved && blobUrl) {
+      pendingLeave = target;
+      $('unsavedWarn').hidden = false;
+      $('reviewActions').hidden = true;
+      return;
+    }
+    doLeave(target);
+  }
+  function doLeave(target) {
+    pendingLeave = null;
+    discardVideo();
+    persist(() => dbClearAll());
+    sessionMeta = null;
+    clearNotice();
+    if (target === 'new') {
+      // Next student: wipe the name and grade so the next child starts fresh.
+      student = { name: '', grade: '' };
+      $('name').value = '';
+      document.querySelectorAll('input[name="grade"]').forEach((r) => { r.checked = false; });
+      document.querySelector('input[name="mode"][value="me"]').checked = true;
+      renderHowTo();
+    }
+    toSetup();
+    if (target === 'new') $('name').focus();
+  }
+  $('againBtn').addEventListener('click', () => leave('again'));
+  $('newBtn').addEventListener('click', () => leave('new'));
+  $('warnBack').addEventListener('click', () => { pendingLeave = null; $('unsavedWarn').hidden = true; $('reviewActions').hidden = false; });
+  $('warnGo').addEventListener('click', () => { if (pendingLeave) doLeave(pendingLeave); });
+
+  /* ================= CRASH PROTECTION: GETTING A VIDEO BACK ================= */
+  async function checkRecovery() {
+    try {
+      const meta = await dbGet('meta', 'current');
+      if (!meta) return;
+      if (Date.now() - (meta.updatedAt || 0) < 15000) return;     // another tab is recording right now
+      if (meta.saved) { await dbClearAll(); return; }             // already saved: nothing to recover
+      const parts = await dbAll('chunks');
+      if (!parts.length) { await dbClearAll(); return; }
+      recoverMeta = meta;
+      recoverParts = parts;
+      const s = parts.length;                                      // one piece is about one second
+      const length = s >= 60 ? Math.floor(s / 60) + ' min ' + pad(s % 60) + ' sec' : s + ' sec';
+      $('recoverInfo').textContent = meta.name + ' · Grade ' + meta.grade + ' · about ' + length + '. The end of the video may be cut off.';
+      $('recoverCard').hidden = false;
+    } catch (e) { /* storage is not available: skip */ }
+  }
+  $('recoverBtn').addEventListener('click', () => {
+    if (!recoverMeta) return;
+    const type = (recoverMeta.mime || 'video/webm').split(';')[0];
+    const blob = new Blob(recoverParts, { type });
+    student = { name: recoverMeta.name, grade: recoverMeta.grade };
+    sessionMeta = recoverMeta;
+    $('recoverCard').hidden = true;
+    showReview(blob, type, student, new Date(recoverMeta.startedAt));
+    notify('This video was recovered. The end may be cut off.', 'info');
+  });
+  $('recoverDelBtn').addEventListener('click', () => {
+    recoverMeta = null;
+    recoverParts = [];
+    persist(() => dbClearAll());
+    $('recoverCard').hidden = true;
+  });
+
+  /* ================= CLEAN UP ================= */
+  // Switch off the camera, face window, screen sharing, microphone and sound mixer.
+  function releaseAll() {
+    cancelCountdown();
+    cancelAnimationFrame(meterRaf);
+    clearInterval(timerId); timerId = 0;
+    try { if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {}); } catch (e) { /* not open */ }
+    streams.forEach((s) => s.getTracks().forEach((t) => { try { t.stop(); } catch (e) { /* already stopped */ } }));
+    streams = [];
+    faceStream = null;
+    if (recordStream) { recordStream.getTracks().forEach((t) => { try { t.stop(); } catch (e) { /* already stopped */ } }); recordStream = null; }
+    if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; analyser = null; }
+    $('live').srcObject = null;
+  }
+
+  // Warn before the page is closed while recording or while a video is not saved.
+  window.addEventListener('beforeunload', (e) => {
+    if (['recording', 'paused', 'finishing'].includes(state) || (blobUrl && !saved)) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+  /* ================= INSTALL AS AN APP ================= */
+  // On a website (not a loose file), Chrome and Edge can install this page as an app.
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installEvent = e;
+    $('installBtn').hidden = false;
+  });
+  $('installBtn').addEventListener('click', async () => {
+    if (!installEvent) return;
+    installEvent.prompt();
+    try { await installEvent.userChoice; } catch (e) { /* the student closed the box */ }
+    installEvent = null;
+    $('installBtn').hidden = true;
+  });
+  window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
+
+  setView('setup', false);
+  checkRecovery();
+})();
+</script>
+</body>
+</html>
