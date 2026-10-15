@@ -142,6 +142,9 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
 .filebox{margin:12px 0 0;font-size:16px;color:var(--muted);overflow-wrap:anywhere}
 .saved{margin-top:16px;padding:14px 18px;border-radius:12px;background:#e6f4ea;border:3px solid var(--s4);font-weight:600}
 .foot{margin-top:8px;font-size:15px;color:var(--muted)}
+.btn.small{min-height:44px;padding:6px 16px;font-size:16px}
+.part-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+.part-row span{font-weight:600}
 </style>
 </head>
 <body data-view="setup">
@@ -222,6 +225,7 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     <section class="card" id="cardGo">
       <h2><span class="num">3</span>Press Start</h2>
       <ol class="howto" id="howTo"></ol>
+      <p class="hint">Long meeting? It is saved in parts automatically. Keep the charger plugged in, close other tabs, and click Allow if Chrome asks about downloading multiple files.</p>
       <details class="settings" id="settings">
         <summary>Settings: camera, microphone, quality</summary>
         <div class="setrow"><label for="camSel">Camera</label><select id="camSel"></select></div>
@@ -229,12 +233,16 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
         <div class="setrow">
           <label for="qualSel">Video quality</label>
           <select id="qualSel">
-            <option value="low">Small file (best for long recordings)</option>
-            <option value="normal" selected>Normal</option>
+            <option value="low" selected>Small file (best for long meetings)</option>
+            <option value="normal">Normal</option>
             <option value="high">High (bigger file)</option>
           </select>
         </div>
-        <p class="hint">Recordings can be up to 60 minutes. For a long recording, choose Small file or Normal.</p>
+        <label class="check" id="voiceRow">
+          <input type="checkbox" id="voiceChk" checked>
+          <span>Voice says "Recording. You may start now." before recording begins.</span>
+        </label>
+        <p class="hint">Long recordings are saved in parts by themselves: every 60 minutes on Small file, every 30 on Normal and every 15 on High.</p>
         <p class="hint" id="devHint"></p>
       </details>
       <button type="button" class="btn go" id="startBtn">Start</button>
@@ -277,6 +285,10 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
       <h2 id="revTitle" tabindex="-1">Watch and save</h2>
       <video id="review" controls playsinline></video>
       <p class="filebox">File name: <strong id="fileName"></strong> <span id="fileSize"></span></p>
+      <div class="filebox" id="partsBox" hidden>
+        <p><strong>Earlier parts were saved to your Downloads folder.</strong> If one is missing, press its button to save it again.</p>
+        <div id="partsList"></div>
+      </div>
       <div class="saved" id="savedMsg" hidden>Saved! Look for the file in your Downloads folder. Then give it to your teacher.</div>
       <div class="warnbox" id="unsavedWarn" hidden>
         <p>This video is not saved yet. If you carry on, it will be deleted.</p>
@@ -299,9 +311,11 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
   'use strict';
 
   /* ================= SETTINGS (safe to change) ================= */
-  const VERSION = '3.1';
-  const MAX_MINUTES = 60;        // recording stops by itself after this long, so the laptop does not run out of memory
-  const WARN_MINUTES_LEFT = 5;   // show a reminder this many minutes before the limit
+  const VERSION = '3.2';
+  // A long recording is cut into parts, and each part is saved by itself. This keeps the laptop's memory small
+  // and means a crash can only lose the part being recorded. Small file = longer parts, because the file is smaller.
+  const PART_MINUTES = { low: 60, normal: 30, high: 15 };
+  const SAY_THIS = 'Recording. You may start now.';   // the voice, spoken after 3, 2, 1
   const AUDIO_BITS  = 128000;    // sound quality
   const COUNTDOWN_FROM = 3;      // 3, 2, 1 before recording starts
   const GRADES = ['K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
@@ -332,7 +346,7 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
   let faceStream = null;       // camera for the face window
   let audioCtx = null, analyser = null, meterRaf = 0;
   let recorder = null, chunks = [], chunkSeq = 0, mimeUsed = '';
-  let limitWarned = false, startedAt = 0, pausedAt = 0, pausedTotal = 0, startDate = new Date(), timerId = 0, countdownId = 0;
+  let partNo = 1, partStartSec = 0, partLimitSec = 1800, recOpts = {}, savedParts = [], announceId = 0, startedAt = 0, pausedAt = 0, pausedTotal = 0, startDate = new Date(), timerId = 0, countdownId = 0;
   let blobUrl = '', fileName = '', saved = false, pendingLeave = null, stopReason = '';
   let tabAudioShared = false, faceActive = false, faceError = '', surface = '';
   let sessionMeta = null;      // details about the recording kept in the laptop's storage, for crash recovery
@@ -352,8 +366,9 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     if (dbPromise) return dbPromise;
     dbPromise = new Promise((resolve, reject) => {
       if (!window.indexedDB) { reject(new Error('no storage')); return; }
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => { req.result.createObjectStore('meta'); req.result.createObjectStore('chunks'); };
+      const req = indexedDB.open(DB_NAME, 2);
+      // meta = details, chunks = the part being recorded now, parts = parts already saved to Downloads (kept as a spare copy)
+      req.onupgradeneeded = () => { ['meta', 'chunks', 'parts'].forEach((n) => { if (!req.result.objectStoreNames.contains(n)) req.result.createObjectStore(n); }); };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
@@ -372,15 +387,16 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
   const dbPut = (store, key, val) => dbRun(store, 'readwrite', (s) => s.put(val, key));
   const dbGet = (store, key) => dbRun(store, 'readonly', (s) => s.get(key));
   const dbAll = (store) => dbRun(store, 'readonly', (s) => s.getAll());
-  function dbClearAll() {
+  function dbClear(stores) {
     return openDb().then((db) => new Promise((resolve, reject) => {
-      const t = db.transaction(['meta', 'chunks'], 'readwrite');
-      t.objectStore('meta').clear();
-      t.objectStore('chunks').clear();
+      const t = db.transaction(stores, 'readwrite');
+      stores.forEach((s) => t.objectStore(s).clear());
       t.oncomplete = () => resolve();
       t.onerror = t.onabort = () => reject(t.error);
     }));
   }
+  const dbClearAll = () => dbClear(['meta', 'chunks', 'parts']);      // everything
+  const dbClearCurrent = () => dbClear(['meta', 'chunks']);           // only the part being recorded
   // Writes go one after another, in order. A storage problem never stops the recording.
   let writeQueue = Promise.resolve();
   function persist(fn) { writeQueue = writeQueue.then(fn).catch((err) => { console.warn('Crash-protection copy failed:', err && err.name, err && err.message); }); return writeQueue; }
@@ -508,10 +524,14 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
   }
   ['camSel', 'micSel', 'qualSel'].forEach((id) => $(id).addEventListener('change', () => savePref(id, $(id).value)));
   if (loadPref('qualSel') && QUALITY[loadPref('qualSel')]) $('qualSel').value = loadPref('qualSel');
+  // The voice tick is remembered too.
+  if (loadPref('voiceChk') === '0') $('voiceChk').checked = false;
+  $('voiceChk').addEventListener('change', () => savePref('voiceChk', $('voiceChk').checked ? '1' : '0'));
+  if (!('speechSynthesis' in window)) { $('voiceChk').checked = false; $('voiceChk').disabled = true; $('voiceRow').hidden = true; }
   if (md && md.addEventListener) md.addEventListener('devicechange', refreshDevices);
   refreshDevices();
 
-  const quality = () => QUALITY[$('qualSel').value] || QUALITY.normal;
+  const quality = () => QUALITY[$('qualSel').value] || QUALITY.low;
   function camConstraints() {
     const q = quality();
     const v = { width: { ideal: q.w }, height: { ideal: q.h }, facingMode: 'user' };
@@ -830,14 +850,43 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
       if (n > 0) { box.textContent = String(n); return; }
       clearInterval(countdownId);
       countdownId = 0;
-      box.hidden = true;
-      startRecording();
+      // After 3, 2, 1 a voice says it is time to start. Recording begins when the voice has finished,
+      // so the voice is never inside the student's video.
+      box.textContent = 'GO';
+      const token = ++announceId;
+      speak(SAY_THIS).then(() => {
+        if (token !== announceId || state !== 'countdown') return;   // cancelled while talking
+        box.hidden = true;
+        startRecording();
+      });
     }, 1000);
   }
 
   function cancelCountdown() {
+    announceId++;                          // makes a waiting voice message do nothing
+    try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { /* nothing to cancel */ }
     if (countdownId) { clearInterval(countdownId); countdownId = 0; }
     $('countdown').hidden = true;
+  }
+
+  // Say something out loud with the laptop's own voice. If the voice is off, missing or too slow, carry on quietly.
+  function speak(text) {
+    return new Promise((resolve) => {
+      if (!$('voiceChk').checked || !('speechSynthesis' in window)) { resolve(); return; }
+      let done = false, startTimer = 0, endTimer = 0;
+      const finish = () => { if (done) return; done = true; clearTimeout(startTimer); clearTimeout(endTimer); resolve(); };
+      try {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-US';
+        u.rate = 0.95;
+        u.onstart = () => clearTimeout(startTimer);   // the voice really started: wait for it to end
+        u.onend = u.onerror = finish;
+        startTimer = setTimeout(finish, 1200);        // no voice started: do not make the student wait
+        endTimer = setTimeout(finish, 6000);          // safety: never wait longer than this
+        speechSynthesis.speak(u);
+      } catch (e) { finish(); }
+    });
   }
 
   function recordingNote() {
@@ -846,58 +895,130 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     return 'Recording now. Go to your ' + where + '.' + (faceActive ? ' Your face is in the small window.' : '') + ' Come back here to press Stop.';
   }
 
-  function startRecording() {
-    if (!recordStream) { toSetup(); return; }
-    chunks = [];
-    chunkSeq = 0;
-    const mime = pickMime();
-    const opts = { videoBitsPerSecond: quality().bits, audioBitsPerSecond: AUDIO_BITS };
-    if (mime) opts.mimeType = mime;
+  // Make a recorder. Each recorder keeps its own pieces (rec._chunks), so a part can be handed over cleanly.
+  function newRecorder() {
+    let rec;
     try {
-      recorder = new MediaRecorder(recordStream, opts);
+      rec = new MediaRecorder(recordStream, recOpts);
     } catch (e) {
-      try { recorder = new MediaRecorder(recordStream); }
-      catch (e2) {
-        toSetup();
-        notify('This browser could not start recording. Please use Google Chrome or Microsoft Edge.', 'error');
-        return;
-      }
+      rec = new MediaRecorder(recordStream);        // plain version if the settings are refused
     }
-    mimeUsed = recorder.mimeType || mime || 'video/webm';
-
-    limitWarned = false;
-    document.title = 'Angels Bud Recorder';
-    startDate = new Date();            // used for the file name
-    startedAt = Date.now();
-    pausedAt = 0;
-    pausedTotal = 0;
-
-    // Start a fresh crash-protection copy of this recording.
-    sessionMeta = { name: student.name, grade: student.grade, mode, mime: mimeUsed, startedAt, updatedAt: startedAt, saved: false };
-    const first = Object.assign({}, sessionMeta);
-    persist(async () => { await dbClearAll(); await dbPut('meta', 'current', first); });
-
-    recorder.ondataavailable = (e) => {
+    rec._chunks = [];
+    rec.ondataavailable = (e) => {
       if (!e.data || e.data.size === 0) return;
-      chunks.push(e.data);
+      rec._chunks.push(e.data);
+      if (rec !== recorder) return;                  // an old part finishing: its spare copy is kept another way
       const n = ++chunkSeq;
       sessionMeta.updatedAt = Date.now();
       const snap = Object.assign({}, sessionMeta);
       persist(async () => { await dbPut('chunks', n, e.data); await dbPut('meta', 'current', snap); });
     };
-    recorder.onerror = () => stopRecording('Something went wrong while recording. Here is what was recorded.');
-    recorder.onstop = finishRecording;
-    recorder.start(1000);              // save a piece every second, so a crash loses very little
+    rec.onerror = () => { if (rec === recorder) stopRecording('Something went wrong while recording. Here is what was recorded.'); };
+    return rec;
+  }
+
+  function startRecording() {
+    if (!recordStream) { toSetup(); return; }
+    chunkSeq = 0;
+    partNo = 1;
+    savedParts = [];
+    partLimitSec = (PART_MINUTES[$('qualSel').value] || PART_MINUTES.low) * 60;
+    const mime = pickMime();
+    recOpts = { videoBitsPerSecond: quality().bits, audioBitsPerSecond: AUDIO_BITS };
+    if (mime) recOpts.mimeType = mime;
+    try {
+      recorder = newRecorder();
+    } catch (e2) {
+      toSetup();
+      notify('This browser could not start recording. Please use Google Chrome or Microsoft Edge.', 'error');
+      return;
+    }
+    const rec = recorder;
+    rec.onstop = () => finishRecording(rec);
+    mimeUsed = rec.mimeType || mime || 'video/webm';
+
+    document.title = 'Angels Bud Recorder';
+    startDate = new Date();            // used for the file name
+    startedAt = Date.now();
+    pausedAt = 0;
+    pausedTotal = 0;
+    partStartSec = 0;
+
+    // Start a fresh crash-protection copy of this recording.
+    sessionMeta = { name: student.name, grade: student.grade, mode, mime: mimeUsed, part: 1, startedAt, updatedAt: startedAt, saved: false };
+    const first = Object.assign({}, sessionMeta);
+    persist(async () => { await dbClearAll(); await dbPut('meta', 'current', first); });
+
+    rec.start(1000);                   // save a piece every second, so a crash loses very little
 
     state = 'recording';
     $('recTitle').textContent = 'Recording';
     $('timer').textContent = '00:00';
-    $('recLabel').textContent = 'REC';
+    $('recLabel').textContent = recLabel();
     $('recBadge').classList.remove('paused');
     $('recBadge').hidden = false;
     if (mode !== 'me') { $('stageNote').hidden = false; $('stageNote').textContent = recordingNote(); }
     showBtns(['pauseBtn', 'stopBtn']);
     timerId = setInterval(updateTimer, 250);
+  }
+
+  const recLabel = () => (partNo > 1 ? 'REC \u00b7 Part ' + partNo : 'REC');
+
+  // Give the student a file by itself (no button press needed).
+  function downloadBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  }
+  const extFor = (type) => (type.includes('mp4') ? 'mp4' : 'webm');
+
+  // The part is full: start the next part right away, then save the finished one.
+  // The new recorder starts BEFORE the old one stops, so no moment of the meeting is lost.
+  function rotatePart() {
+    if (state !== 'recording' || !recorder || recorder.state === 'inactive') return;
+    const old = recorder;
+    const n = partNo;
+    let fresh;
+    try {
+      fresh = newRecorder();
+      fresh.onstop = () => finishRecording(fresh);
+      chunkSeq = 0;
+      partNo = n + 1;
+      recorder = fresh;
+      fresh.start(1000);
+    } catch (e) {
+      recorder = old; partNo = n;        // could not start the next part: keep going with this one
+      partStartSec = elapsedSec();
+      return;
+    }
+    partStartSec = elapsedSec();
+    sessionMeta.part = partNo;
+    sessionMeta.updatedAt = Date.now();
+    const snap = Object.assign({}, sessionMeta);
+    persist(async () => { await dbClearCurrent(); await dbPut('meta', 'current', snap); });
+    $('recLabel').textContent = recLabel();
+    old.onstop = () => saveFinishedPart(old, n);
+    try { old.stop(); } catch (e) { saveFinishedPart(old, n); }
+  }
+
+  // Save a finished part to Downloads, and keep a spare copy in the browser's storage in case the download is blocked.
+  function saveFinishedPart(old, n) {
+    const type = (mimeUsed || 'video/webm').split(';')[0];
+    const blob = new Blob(old._chunks, { type });
+    old._chunks = [];
+    if (blob.size < 1000) return;
+    const name = makeFileName(extFor(type), student, startDate, n);
+    downloadBlob(blob, name);
+    savedParts.push({ n, name, size: blob.size });
+    persist(() => dbPut('parts', n, { n, name, size: blob.size, blob }));
+    $('warnText').textContent = 'Part ' + n + ' was saved to your Downloads folder. The recording is still going. If Chrome asks to allow downloading multiple files, click Allow.';
+    $('warnBox').hidden = false;
+    document.title = '\u2714 Part ' + n + ' saved - Angels Bud Recorder';
   }
 
   // Time recorded so far. Time spent paused does not count.
@@ -906,17 +1027,15 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     const pausedNow = state === 'paused' ? now - pausedAt : 0;
     return Math.max(0, Math.floor((now - startedAt - pausedTotal - pausedNow) / 1000));
   }
+  function formatTime(s) {
+    const hrs = Math.floor(s / 3600), min = Math.floor((s % 3600) / 60);
+    return (hrs ? hrs + ':' + pad(min) : pad(min)) + ':' + pad(s % 60);
+  }
   function updateTimer() {
     const s = elapsedSec();
-    $('timer').textContent = pad(Math.floor(s / 60)) + ':' + pad(s % 60);
-    // A few minutes before the limit, show a reminder (also in the tab title, so it can be seen from another tab).
-    if (!limitWarned && s >= (MAX_MINUTES - WARN_MINUTES_LEFT) * 60) {
-      limitWarned = true;
-      $('warnText').textContent = WARN_MINUTES_LEFT + ' minutes left. The recording will stop by itself at ' + MAX_MINUTES + ' minutes. You can press Stop, save, and record again.';
-      $('warnBox').hidden = false;
-      document.title = '\u23f0 ' + WARN_MINUTES_LEFT + ' min left - Angels Bud Recorder';
-    }
-    if (state === 'recording' && s >= MAX_MINUTES * 60) stopRecording('Time is up. The recording stopped after ' + MAX_MINUTES + ' minutes.');
+    $('timer').textContent = formatTime(s);
+    // When the part is full, save it and carry on with the next one.
+    if (state === 'recording' && s - partStartSec >= partLimitSec) rotatePart();
   }
 
   $('pauseBtn').addEventListener('click', () => {
@@ -935,7 +1054,7 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     try { recorder.resume(); } catch (e) { return; }
     pausedTotal += Date.now() - pausedAt;
     state = 'recording';
-    $('recLabel').textContent = 'REC';
+    $('recLabel').textContent = recLabel();
     $('recBadge').classList.remove('paused');
     $('recTitle').textContent = 'Recording';
     if (mode !== 'me') $('stageNote').textContent = recordingNote();
@@ -952,28 +1071,32 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
   $('stopBtn').addEventListener('click', () => stopRecording(''));
 
   // Build the video file from the saved pieces and show it for review.
-  function finishRecording() {
+  function finishRecording(rec) {
     const type = (mimeUsed || 'video/webm').split(';')[0];
-    const blob = new Blob(chunks, { type });
-    chunks = [];
+    const blob = new Blob(rec._chunks, { type });
+    rec._chunks = [];
     releaseAll();                      // switches the camera light, face window and screen sharing off
     document.title = 'Angels Bud Recorder';
     state = 'idle';
     if (blob.size < 1000) {
-      persist(() => dbClearAll());
+      persist(() => dbClearCurrent());
       sessionMeta = null;
       setView('setup');
-      notify('The recording is empty. Please try again.', 'error');
+      if (savedParts.length) notify('Recording finished. All ' + savedParts.length + ' part(s) were already saved to your Downloads folder.', 'info');
+      else notify('The recording is empty. Please try again.', 'error');
       return;
     }
-    showReview(blob, type, student, startDate);
-    if (stopReason) notify(stopReason, 'info'); else clearNotice();
+    showReview(blob, type, student, startDate, partNo);
+    const msgs = [];
+    if (partNo > 1) msgs.push('This is the last part (Part ' + partNo + '). Parts 1 to ' + (partNo - 1) + ' were already saved to your Downloads folder.');
+    if (stopReason) msgs.push(stopReason);
+    if (msgs.length) notify(msgs.join(' '), 'info'); else clearNotice();
   }
 
-  function showReview(blob, type, who, date) {
+  function showReview(blob, type, who, date, part) {
     discardVideo();
     blobUrl = URL.createObjectURL(blob);
-    fileName = makeFileName(type.includes('mp4') ? 'mp4' : 'webm', who, date);
+    fileName = makeFileName(extFor(type), who, date, part > 1 ? part : 0);
     saved = false;
     $('review').src = blobUrl;
     $('fileName').textContent = fileName;
@@ -982,7 +1105,34 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     $('unsavedWarn').hidden = true;
     $('reviewActions').hidden = false;
     $('saveBtn').textContent = 'Save video';
+    renderParts();
     setView('review');
+  }
+
+  // List the earlier parts, each with a button to save it again (from the spare copy).
+  function renderParts() {
+    const list = $('partsList');
+    list.textContent = '';
+    savedParts.slice().sort((a, b) => a.n - b.n).forEach((p) => {
+      const row = document.createElement('div');
+      row.className = 'part-row';
+      const label = document.createElement('span');
+      label.textContent = 'Part ' + p.n + ' (' + formatSize(p.size) + ')';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn ghost small';
+      btn.textContent = 'Save Part ' + p.n + ' again';
+      btn.addEventListener('click', async () => {
+        try {
+          const rec = await dbGet('parts', p.n);
+          if (rec && rec.blob) downloadBlob(rec.blob, rec.name);
+          else notify('The spare copy of Part ' + p.n + ' is no longer available. Please look in your Downloads folder.', 'warn');
+        } catch (e) { notify('The spare copy of Part ' + p.n + ' could not be opened. Please look in your Downloads folder.', 'warn'); }
+      });
+      row.append(label, btn);
+      list.appendChild(row);
+    });
+    $('partsBox').hidden = savedParts.length === 0;
   }
 
   // WebM files from the browser have no length written in them. This small trick lets the play bar work.
@@ -999,10 +1149,11 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     // Keep letters and numbers from any language. Spaces become underscores.
     return s.normalize('NFC').replace(/[^\p{L}\p{N}_\- ]+/gu, '').trim().replace(/\s+/g, '_').slice(0, 40);
   }
-  function makeFileName(ext, who, d) {
+  function makeFileName(ext, who, d, part) {
     const date = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
     const time = pad(d.getHours()) + pad(d.getMinutes());     // time stops two videos having the same name
-    return (cleanPart(who.name) || 'Student') + '_Grade' + who.grade + '_' + date + '_' + time + '.' + ext;
+    const partTag = part ? '_Part' + part : '';               // only long recordings that were cut into parts
+    return (cleanPart(who.name) || 'Student') + '_Grade' + who.grade + '_' + date + '_' + time + partTag + '.' + ext;
   }
   function formatSize(bytes) {
     return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
@@ -1050,6 +1201,9 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     discardVideo();
     persist(() => dbClearAll());
     sessionMeta = null;
+    savedParts = [];
+    partNo = 1;
+    renderParts();
     clearNotice();
     if (target === 'new') {
       // Next student: wipe the name and grade so the next child starts fresh.
@@ -1071,16 +1225,20 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
   async function checkRecovery() {
     try {
       const meta = await dbGet('meta', 'current');
-      if (!meta) return;
+      if (!meta) { persist(() => dbClearAll()); return; }          // nothing unfinished: tidy up old spare copies
       if (Date.now() - (meta.updatedAt || 0) < 15000) return;     // another tab is recording right now
       if (meta.saved) { await dbClearAll(); return; }             // already saved: nothing to recover
-      const parts = await dbAll('chunks');
-      if (!parts.length) { await dbClearAll(); return; }
+      const pieces = await dbAll('chunks');
+      if (!pieces.length) { await dbClearAll(); return; }
+      const earlier = (await dbAll('parts')) || [];
       recoverMeta = meta;
-      recoverParts = parts;
-      const s = parts.length;                                      // one piece is about one second
+      recoverParts = pieces;
+      savedParts = earlier.map((r) => ({ n: r.n, name: r.name, size: r.size }));
+      const s = pieces.length;                                     // one piece is about one second
       const length = s >= 60 ? Math.floor(s / 60) + ' min ' + pad(s % 60) + ' sec' : s + ' sec';
-      $('recoverInfo').textContent = meta.name + ' · Grade ' + meta.grade + ' · about ' + length + '. The end of the video may be cut off.';
+      const partText = (meta.part || 1) > 1 ? ' \u00b7 Part ' + meta.part : '';
+      $('recoverInfo').textContent = meta.name + ' \u00b7 Grade ' + meta.grade + partText + ' \u00b7 about ' + length + '. The end of the video may be cut off.' +
+        (earlier.length ? ' Earlier parts (' + earlier.length + ') are also kept here.' : '');
       $('recoverCard').hidden = false;
     } catch (e) { /* storage is not available: skip */ }
   }
@@ -1090,13 +1248,15 @@ select:focus-visible{outline:4px solid var(--ink);outline-offset:2px}
     const blob = new Blob(recoverParts, { type });
     student = { name: recoverMeta.name, grade: recoverMeta.grade };
     sessionMeta = recoverMeta;
+    partNo = recoverMeta.part || 1;
     $('recoverCard').hidden = true;
-    showReview(blob, type, student, new Date(recoverMeta.startedAt));
+    showReview(blob, type, student, new Date(recoverMeta.startedAt), partNo);
     notify('This video was recovered. The end may be cut off.', 'info');
   });
   $('recoverDelBtn').addEventListener('click', () => {
     recoverMeta = null;
     recoverParts = [];
+    savedParts = [];
     persist(() => dbClearAll());
     $('recoverCard').hidden = true;
   });
